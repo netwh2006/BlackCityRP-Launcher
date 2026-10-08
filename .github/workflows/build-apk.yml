@@ -40,27 +40,24 @@ jobs:
           mkdir buildsrc
           unzip -q BlackCityRP-Launcher-Source.zip -d buildsrc
 
-      - name: Force JVM target compatibility
+      - name: Force JVM compatibility
         run: |
           cat > /tmp/force-jvm.gradle <<'EOF'
-          import org.gradle.api.tasks.compile.JavaCompile
-          import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
           allprojects {
               tasks.withType(JavaCompile).configureEach {
                   sourceCompatibility = "1.8"
                   targetCompatibility = "1.8"
               }
 
-              tasks.withType(KotlinCompile).configureEach {
-                  kotlinOptions {
-                      jvmTarget = "1.8"
-                  }
+              tasks.matching {
+                  it.class.name.contains("KotlinCompile")
+              }.configureEach {
+                  kotlinOptions.jvmTarget = "1.8"
               }
           }
           EOF
 
-      - name: Detect project directory
+      - name: Detect Gradle project
         run: |
           SETTINGS=$(find buildsrc -type f \
             \( -name "settings.gradle.kts" -o -name "settings.gradle" \) \
@@ -74,3 +71,38 @@ jobs:
           PROJECT_DIR=$(dirname "$SETTINGS")
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo "Found project:"
+          echo "$PROJECT_DIR"
+
+      - name: Build APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          gradle -I /tmp/force-jvm.gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Find APK
+        run: |
+          echo "Searching for APK..."
+
+          find buildsrc -type f -name "*.apk" -print
+
+          APK=$(find buildsrc -type f -name "*.apk" | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK was not created!"
+            exit 1
+          fi
+
+          echo "APK found:"
+          echo "$APK"
+
+          mkdir -p apk-output
+          cp "$APK" apk-output/BlackCityRP-Launcher.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlackCityRP-Launcher-APK
+          path: apk-output/BlackCityRP-Launcher.apk
+          if-no-files-found: error
+          retention-days: 30
