@@ -22,11 +22,10 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
-        with:
-          packages: 'platform-tools'
 
       - name: Install Android SDK
         run: |
+          sdkmanager "platform-tools"
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
 
@@ -41,50 +40,25 @@ jobs:
           mkdir buildsrc
           unzip -q BlackCityRP-Launcher-Source.zip -d buildsrc
 
-      - name: Force Kotlin JVM 1.8
+      - name: Force JVM target compatibility
         run: |
-          python3 <<'PY'
-          from pathlib import Path
+          cat > /tmp/force-jvm.gradle <<'EOF'
+          import org.gradle.api.tasks.compile.JavaCompile
+          import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
-          root = Path("buildsrc")
+          allprojects {
+              tasks.withType(JavaCompile).configureEach {
+                  sourceCompatibility = "1.8"
+                  targetCompatibility = "1.8"
+              }
 
-          for path in root.rglob("build.gradle.kts"):
-              text = path.read_text(encoding="utf-8")
-
-              text = text.replace(
-                  'jvmTarget = "17"',
-                  'jvmTarget = "1.8"'
-              )
-
-              text = text.replace(
-                  "jvmTarget = '17'",
-                  "jvmTarget = '1.8'"
-              )
-
-              text = text.replace(
-                  'jvmTarget = "1.8"',
-                  'jvmTarget = "1.8"'
-              )
-
-              path.write_text(text, encoding="utf-8")
-              print("Processed:", path)
-
-          for path in root.rglob("build.gradle"):
-              text = path.read_text(encoding="utf-8")
-
-              text = text.replace(
-                  'jvmTarget = "17"',
-                  'jvmTarget = "1.8"'
-              )
-
-              text = text.replace(
-                  "jvmTarget = '17'",
-                  "jvmTarget = '1.8'"
-              )
-
-              path.write_text(text, encoding="utf-8")
-              print("Processed:", path)
-          PY
+              tasks.withType(KotlinCompile).configureEach {
+                  kotlinOptions {
+                      jvmTarget = "1.8"
+                  }
+              }
+          }
+          EOF
 
       - name: Detect project directory
         run: |
@@ -100,27 +74,3 @@ jobs:
           PROJECT_DIR=$(dirname "$SETTINGS")
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-          echo "Project directory: $PROJECT_DIR"
-
-      - name: Verify Java
-        run: |
-          java -version
-          echo "JAVA_HOME=$JAVA_HOME"
-
-      - name: Build APK
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          gradle assembleDebug --no-daemon --stacktrace
-
-      - name: Find APK
-        run: |
-          echo "=== APK files ==="
-          find buildsrc -type f -name "*.apk" -print
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: BlackCityRP-Launcher-APK
-          path: buildsrc/**/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
