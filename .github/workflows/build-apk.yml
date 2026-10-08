@@ -21,12 +21,14 @@ jobs:
           java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
 
-      - name: Install Android SDK
+      - name: Install Android SDK packages
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -38,6 +40,12 @@ jobs:
           rm -rf buildsrc
           mkdir buildsrc
           unzip -q BlackCityRP-Launcher-Source.zip -d buildsrc
+
+      - name: Check project
+        working-directory: buildsrc
+        run: |
+          echo "Project files:"
+          ls -la
 
       - name: Build APK
         working-directory: buildsrc
