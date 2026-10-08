@@ -41,20 +41,86 @@ jobs:
           mkdir buildsrc
           unzip -q BlackCityRP-Launcher-Source.zip -d buildsrc
 
-      - name: Check project
-        working-directory: buildsrc
+      - name: Find Gradle project
         run: |
-          echo "Project files:"
-          ls -la
+          echo "Searching for Gradle project..."
+          find buildsrc -maxdepth 5 -name "settings.gradle*" -o -name "build.gradle*" | sort
+
+      - name: Fix Java and Kotlin JVM target
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          root = Path("buildsrc")
+
+          for path in root.rglob("build.gradle.kts"):
+              text = path.read_text(encoding="utf-8")
+              
+              # Java 8 -> Java 17
+              text = text.replace(
+                  "JavaVersion.VERSION_1_8",
+                  "JavaVersion.VERSION_17"
+              )
+
+              # Kotlin JVM 1.8 -> 17
+              text = text.replace(
+                  'jvmTarget = "1.8"',
+                  'jvmTarget = "17"'
+              )
+              text = text.replace(
+                  "jvmTarget = '1.8'",
+                  "jvmTarget = '17'"
+              )
+
+              path.write_text(text, encoding="utf-8")
+              print(f"Fixed: {path}")
+
+          for path in root.rglob("build.gradle"):
+              text = path.read_text(encoding="utf-8")
+
+              text = text.replace(
+                  "JavaVersion.VERSION_1_8",
+                  "JavaVersion.VERSION_17"
+              )
+
+              text = text.replace(
+                  'jvmTarget = "1.8"',
+                  'jvmTarget = "17"'
+              )
+
+              text = text.replace(
+                  "jvmTarget = '1.8'",
+                  "jvmTarget = '17'"
+              )
+
+              path.write_text(text, encoding="utf-8")
+              print(f"Fixed: {path}")
+          PY
+
+      - name: Detect project directory
+        run: |
+          if [ -f "buildsrc/settings.gradle.kts" ] || [ -f "buildsrc/settings.gradle" ]; then
+            echo "PROJECT_DIR=buildsrc" >> "$GITHUB_ENV"
+          else
+            PROJECT_DIR=$(find buildsrc -type f \( -name "settings.gradle.kts" -o -name "settings.gradle" \) -print -quit | xargs dirname)
+            echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          fi
+
+          echo "Project directory: $PROJECT_DIR"
 
       - name: Build APK
-        working-directory: buildsrc
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          gradle assembleDebug --no-daemon
+          gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Find APK
+        run: |
+          echo "Searching for APK..."
+          find buildsrc -type f -name "*.apk" -print
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: BlackCityRP-Launcher-APK
-          path: buildsrc/app/build/outputs/apk/debug/app-debug.apk
+          path: buildsrc/**/build/outputs/apk/debug/*.apk
           if-no-files-found: error
