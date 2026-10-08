@@ -25,7 +25,7 @@ jobs:
         with:
           packages: 'platform-tools'
 
-      - name: Install Android SDK packages
+      - name: Install Android SDK
         run: |
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
@@ -43,10 +43,15 @@ jobs:
 
       - name: Find Gradle project
         run: |
-          echo "Searching for Gradle project..."
-          find buildsrc -maxdepth 5 -name "settings.gradle*" -o -name "build.gradle*" | sort
+          echo "=== Gradle files ==="
+          find buildsrc -maxdepth 6 \
+            \( -name "settings.gradle" \
+            -o -name "settings.gradle.kts" \
+            -o -name "build.gradle" \
+            -o -name "build.gradle.kts" \) \
+            -print
 
-      - name: Fix Java and Kotlin JVM target
+      - name: Force Java 17 and Kotlin 17
         run: |
           python3 <<'PY'
           from pathlib import Path
@@ -55,25 +60,42 @@ jobs:
 
           for path in root.rglob("build.gradle.kts"):
               text = path.read_text(encoding="utf-8")
-              
-              # Java 8 -> Java 17
+
               text = text.replace(
                   "JavaVersion.VERSION_1_8",
                   "JavaVersion.VERSION_17"
               )
 
-              # Kotlin JVM 1.8 -> 17
               text = text.replace(
                   'jvmTarget = "1.8"',
                   'jvmTarget = "17"'
               )
+
               text = text.replace(
                   "jvmTarget = '1.8'",
                   "jvmTarget = '17'"
               )
 
+              block = r'''
+
+          // BlackCityRP CI - force JVM 17
+          tasks.withType<JavaCompile>().configureEach {
+              sourceCompatibility = "17"
+              targetCompatibility = "17"
+          }
+
+          tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+          '''
+
+              if "BlackCityRP CI - force JVM 17" not in text:
+                  text += block
+
               path.write_text(text, encoding="utf-8")
-              print(f"Fixed: {path}")
+              print("Fixed:", path)
 
           for path in root.rglob("build.gradle"):
               text = path.read_text(encoding="utf-8")
@@ -93,8 +115,26 @@ jobs:
                   "jvmTarget = '17'"
               )
 
+              block = '''
+
+          // BlackCityRP CI - force JVM 17
+          tasks.withType(JavaCompile).configureEach {
+              sourceCompatibility = "17"
+              targetCompatibility = "17"
+          }
+
+          tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+          '''
+
+              if "BlackCityRP CI - force JVM 17" not in text:
+                  text += block
+
               path.write_text(text, encoding="utf-8")
-              print(f"Fixed: {path}")
+              print("Fixed:", path)
           PY
 
       - name: Detect project directory
@@ -102,11 +142,26 @@ jobs:
           if [ -f "buildsrc/settings.gradle.kts" ] || [ -f "buildsrc/settings.gradle" ]; then
             echo "PROJECT_DIR=buildsrc" >> "$GITHUB_ENV"
           else
-            PROJECT_DIR=$(find buildsrc -type f \( -name "settings.gradle.kts" -o -name "settings.gradle" \) -print -quit | xargs dirname)
+            SETTINGS=$(find buildsrc -type f \
+              \( -name "settings.gradle.kts" -o -name "settings.gradle" \) \
+              -print -quit)
+
+            if [ -z "$SETTINGS" ]; then
+              echo "Gradle settings file not found!"
+              exit 1
+            fi
+
+            PROJECT_DIR=$(dirname "$SETTINGS")
             echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           fi
 
-          echo "Project directory: $PROJECT_DIR"
+          echo "Project directory:"
+          cat "$GITHUB_ENV"
+
+      - name: Verify Java
+        run: |
+          java -version
+          echo "JAVA_HOME=$JAVA_HOME"
 
       - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
@@ -115,7 +170,7 @@ jobs:
 
       - name: Find APK
         run: |
-          echo "Searching for APK..."
+          echo "=== APK files ==="
           find buildsrc -type f -name "*.apk" -print
 
       - name: Upload APK
